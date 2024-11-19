@@ -1,13 +1,17 @@
 # PDF Text Extractor with OpenAI Processing
 
-A Python tool that extracts text from PDF files and processes it using OpenAI's GPT models.
+A Python tool that extracts text from PDF files and processes it using OpenAI's GPT models to identify document types, dates, and investment names.
 
 ## Features
 
 - PDF text extraction
 - OpenAI GPT processing
+- Automatic document type classification
+- Date and investment name extraction
+- Single file and batch processing modes
+- Directory-based validation
+- Results export to CSV
 - Configurable prompts and settings
-- Simple command-line interface
 
 ## Prerequisites
 
@@ -39,82 +43,129 @@ pip install -r requirements.txt
 # Copy and edit config.json
 copy config.json.example config.json  # Windows
 cp config.json.example config.json    # Linux/Mac
-
-# Edit prompt.txt with your desired system prompt
-# The default prompt is already provided
 ```
 
-5. Edit `config.json` with your OpenAI API key and settings:
+5. Edit `config.json` with your API settings:
 ```json
 {
-    "api_base": "https://api.openai.com/v1",
+    "api_base": "your-api-base-url",
     "api_key": "your-api-key-here",
-    "model": "gpt-4-mini"
+    "model": "your-model-name"
 }
-```
-
-6. (Optional) Customize the system prompt in `prompt.txt`:
-```text
-You are a helpful assistant that specializes in summarizing documents. Please provide clear and concise summaries.
-```
-
-## Usage
-
-1. Place your PDF files in the `pdfs` directory:
-```
-PDFExtractor/
-├── pdfs/
-│   ├── document1.pdf
-│   └── document2.pdf
-```
-
-2. Run the program:
-```bash
-python main.py document1.pdf
-```
-
-Example output:
-```
-Extracting text from PDF...
-Successfully extracted text, length: 1234 characters
-Processing text with OpenAI...
-
-Result:
-[OpenAI's response will appear here]
 ```
 
 ## Directory Structure
 
 ```
 PDFExtractor/
-├── pdfs/              # Place your PDF files here
-├── src/
-│   ├── pdf_processor.py
-│   └── openai_client.py
-├── config.json        # Your configuration file
+├── pdfs/                      # Root directory for PDF files
+│   ├── Financial Statement/   # Subdirectory for financial statements
+│   │   ├── report1.pdf
+│   │   └── report2.pdf
+│   ├── Cash Notice/          # Subdirectory for cash notices
+│   │   └── notice1.pdf
+│   └── [Other Document Types]/
+├── config.json               # Configuration file
 ├── config.json.example
-├── prompt.txt         # Your system prompt file
+├── prompt.txt               # System prompt file
 ├── requirements.txt
-├── README.md
-└── main.py
+├── scanpdf.py              # PDF scanning and analysis script
+└── README.md
+```
+
+## Usage
+
+### Single File Processing
+
+1. To process a single PDF file and get JSON output:
+```bash
+python main.py "Financial Statement/app.pdf"
+```
+
+Example output:
+```json
+{
+  "documentType": "Financial Statement",
+  "DocDate": "12/30/2023",
+  "InvestmentName": "Apple Inc."
+}
+```
+
+### Batch Processing
+
+1. Create subdirectories in the `pdfs` directory for each document type:
+   - The directory name should match exactly with the expected document type
+   - Example directory names:
+     - `Financial Statement`
+     - `Cash Notice`
+     - `K-1 and Tax Information`
+     - etc.
+
+2. Place PDF files in their corresponding type directories:
+   ```
+   pdfs/
+   ├── Financial Statement/
+   │   ├── q4_report.pdf
+   │   └── annual_statement.pdf
+   ├── Cash Notice/
+   │   └── payment_notice.pdf
+   ```
+
+3. Run the scanning script for batch processing:
+```bash
+python scanpdf.py
+```
+
+4. The script will:
+   - Scan all PDF files in the `pdfs` directory and its subdirectories
+   - Extract text from each PDF
+   - Process the text using the configured LLM
+   - Compare LLM's classification with the directory name
+   - Generate a `result.csv` file with the results
+
+### Results
+
+#### Single File Output
+When processing a single file using `main.py`, the output will be a JSON object containing:
+- `documentType`: Document type identified by the LLM
+- `DocDate`: Date extracted from the document
+- `InvestmentName`: Investment name found in the document
+
+Example:
+```json
+{
+  "documentType": "Financial Statement",
+  "DocDate": "12/30/2023",
+  "InvestmentName": "Apple Inc."
+}
+```
+
+#### Batch Processing Output
+The `result.csv` file from batch processing contains:
+- `file_name`: Name of the processed PDF file
+- `root_folder`: Name of the parent directory under `pdfs/`
+- `documentType`: Document type identified by the LLM
+- `DocDate`: Date extracted from the document
+- `InvestmentName`: Investment name found in the document
+- `isDocTypeCorrect`: Whether LLM's classification matches the directory name (true/false)
+
+Example CSV content:
+```csv
+file_name,root_folder,documentType,DocDate,InvestmentName,isDocTypeCorrect
+q4_report.pdf,Financial Statement,Financial Statement,2023-12-31,ABC Fund,true
+payment_notice.pdf,Cash Notice,Cash Notice,2024-01-15,XYZ Investment,true
+invalid.pdf,K-1 and Tax Information,ERROR,Failed to extract text,,false
 ```
 
 ## Error Handling
 
-- If the `pdfs` directory doesn't exist, it will be created automatically
-- If the specified PDF file is not found, you'll get a helpful error message
-- Configuration errors will be reported with clear instructions
+- Failed PDF processing is logged in `result.csv` with:
+  - `documentType`: "ERROR"
+  - `DocDate`: Error message
+  - `isDocTypeCorrect`: false
 
-## Common Issues
+## Customization
 
-1. "config.json not found":
-   - Make sure you've copied `config.json.example` to `config.json`
-   - Update the API key in `config.json`
-
-2. "PDF file not found":
-   - Ensure your PDF file is in the `pdfs` directory
-   - Check the filename matches exactly
-
-## License
-
-[Your chosen license]
+- Modify `prompt.txt` to adjust the LLM's behavior
+- Update document type directories as needed
+- Configure API settings in `config.json`
