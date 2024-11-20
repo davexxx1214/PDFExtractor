@@ -28,36 +28,36 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         return ""
 
 def estimate_tokens(text: str) -> int:
-    """估算文本的token数量
+    """Estimate the number of tokens in the text
     
-    使用简单的估算方法：
-    - 英文单词约等于1个token
-    - 中文字符约等于2个token
-    - 标点符号和空格约等于0.25个token
+    Using a simple estimation method:
+    - English words are approximately 1 token
+    - Chinese characters are approximately 2 tokens
+    - Punctuation and spaces are approximately 0.25 tokens
     """
-    # 移除多余的空白字符
+    # Remove extra whitespace characters
     text = ' '.join(text.split())
     
-    # 计算中文字符数量
+    # Calculate the number of Chinese characters
     chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
     
-    # 计算英文单词数量（简单估算）
+    # Calculate the number of English words (simple estimation)
     words = len(text.split())
     
-    # 计算标点符号和空格数量
+    # Calculate the number of punctuation and spaces
     punctuation = sum(1 for char in text if not char.isalnum())
     
-    # 估算总token数
+    # Estimate the total number of tokens
     estimated_tokens = (
-        chinese_chars * 2 +  # 中文字符
-        words +             # 英文单词
-        punctuation * 0.25  # 标点和空格
+        chinese_chars * 2 +  # Chinese characters
+        words +             # English words
+        punctuation * 0.25  # Punctuation and spaces
     )
     
     return int(estimated_tokens)
 
 def truncate_text_by_tokens(text: str, max_tokens: int, reserved_tokens: int = 200) -> str:
-    """将文本截断到指定的token数量以内，使用简单字符估算方法"""
+    """Truncate the text to the specified number of tokens, using a simple character estimation method"""
     if not text:
         return text
         
@@ -66,21 +66,21 @@ def truncate_text_by_tokens(text: str, max_tokens: int, reserved_tokens: int = 2
     if estimated_total <= max_tokens:
         return text
     
-    # 计算截断比例
+    # Calculate the truncation ratio
     ratio = max_tokens / estimated_total
     target_length = int(len(text) * ratio)
     
-    # 截取文本
+    # Truncate the text
     truncated_text = text[:target_length]
     
-    # 找到最后一个完整段落
+    # Find the last complete paragraph
     last_para = truncated_text.rfind('\n\n')
     if last_para > 0:
         truncated_text = truncated_text[:last_para]
     
-    # 计算最终token数
+    # Calculate the final number of tokens
     final_tokens = estimate_tokens(truncated_text)
-    print(f"文本已截断：原始token估算={estimated_total}, 截断后token估算={final_tokens}")
+    print(f"Text truncated: Original tokens={estimated_total}, After truncation={final_tokens}")
     
     return truncated_text.strip()
 
@@ -89,16 +89,16 @@ def get_llm_analysis(text: str, config: Dict[str, Any]) -> Dict[str, Any]:
     with open('prompt.txt', 'r') as f:
         prompt = f.read()
     
-    # 从配置中获取token限制
-    max_tokens = config.get('max_tokens', 8192)  # 默认值为8192
-    reserved_tokens = config.get('reserved_tokens', 200)  # 默认值为200
+    # Get the token limit from the configuration
+    max_tokens = config.get('max_tokens', 8192)  # Default value is 8192
+    reserved_tokens = config.get('reserved_tokens', 200)  # Default value is 200
     
-    # 计算prompt的token数量
+    # Calculate the number of tokens in the prompt
     prompt_tokens = estimate_tokens(prompt)
-    # 为文本内容预留token空间
+    # Reserve token space for the text content
     max_text_tokens = max_tokens - prompt_tokens - reserved_tokens
     
-    # 使用简单估算方法进行token计数和截断
+    # Use a simple estimation method for token counting and truncation
     text = truncate_text_by_tokens(
         text=text,
         max_tokens=max_text_tokens,
@@ -146,8 +146,8 @@ def get_llm_analysis(text: str, config: Dict[str, Any]) -> Dict[str, Any]:
         raise Exception(f"Failed to parse LLM response as JSON: {llm_response}\nError: {str(e)}")
 
 def get_correct_document_type(pdf_path: str) -> str:
-    """从PDF文件路径获取正确的文档类型（基于目录名）"""
-    # 获取pdfs目录下的第一级子目录名作为文档类型
+    """Get the correct document type from the PDF file path (based on directory name)"""
+    # Get the first subdirectory name under pdfs as the document type
     parts = pdf_path.split(os.sep)
     if 'pdfs' in parts:
         pdfs_index = parts.index('pdfs')
@@ -165,7 +165,7 @@ def find_pdf_files(base_dir: str = "pdfs") -> list[str]:
     return pdf_files
 
 def clear_csv_file() -> None:
-    """清空CSV文件并写入表头"""
+    """Clear the CSV file and write the header"""
     csv_fields = ['file_name', 'root_folder', 'documentType', 'DocDate', 'InvestmentName', 'isDocTypeCorrect']
     with open('result.csv', 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=csv_fields)
@@ -179,57 +179,30 @@ def write_to_csv(data: Dict[str, Any]) -> None:
         writer = csv.DictWriter(csvfile, fieldnames=csv_fields)
         writer.writerow(data)
 
-def main():
-    # Create pdfs directory if it doesn't exist
-    if not os.path.exists("pdfs"):
-        os.makedirs("pdfs")
-        print("Created 'pdfs' directory. Please place your PDF files in appropriate subdirectories.")
-        return
-
-    # 清空CSV文件并写入表头
-    clear_csv_file()
-
-    # Load configuration
-    config = load_config()
-    
-    # Process all PDF files in the pdfs directory and its subdirectories
-    for pdf_path in find_pdf_files():
-        try:
-            # Get the correct document type from directory name
-            correct_doc_type = get_correct_document_type(pdf_path)
-            # Get the root folder name (first subdirectory under pdfs)
-            root_folder = os.path.basename(os.path.dirname(pdf_path))
-            
-            # Process PDF file
-            process_pdf(pdf_path, config, root_folder)
-            
-        except Exception as e:
-            print(f"Error processing {pdf_path}: {str(e)}")
-
 def process_pdf(pdf_path: str, config: Dict[str, Any], root_folder: str = "") -> None:
     """Process a single PDF file"""
     try:
-        print(f"Processing {pdf_path}...")
+        print(f"Processing file: {pdf_path}")
         
-        # 获取正确的文档类型（从目录名）
+        # Get the correct document type from the directory name
         correct_doc_type = get_correct_document_type(pdf_path)
         
-        # 提取文本
+        # Extract text
         text = extract_text_from_pdf(pdf_path)
         if not text.strip():
-            print(f"Warning: No text extracted from {pdf_path}")
+            print(f"Warning: No text could be extracted from {pdf_path}")
             return
             
-        # 获取分析结果
+        # Get analysis result
         result = get_llm_analysis(text, config)
         if not result:
             print(f"Warning: No analysis result for {pdf_path}")
             return
             
-        # 检查文档类型是否匹配
+        # Check if the document type matches
         is_doc_type_correct = result.get('documentType', '').strip() == correct_doc_type.strip()
         
-        # 准备CSV数据
+        # Prepare CSV data
         csv_data = {
             'file_name': os.path.basename(pdf_path),
             'root_folder': root_folder,
@@ -239,19 +212,20 @@ def process_pdf(pdf_path: str, config: Dict[str, Any], root_folder: str = "") ->
             'isDocTypeCorrect': is_doc_type_correct
         }
         
-        # 打印处理结果
+        # Print processing result
+        print(f"\nAnalysis Results:")
         print(f"File: {os.path.basename(pdf_path)}")
-        print(f"Directory type: {correct_doc_type}")
-        print(f"Detected type: {result.get('documentType', '')}")
-        print(f"Type match: {is_doc_type_correct}")
+        print(f"Expected Type: {correct_doc_type}")
+        print(f"Detected Type: {result.get('documentType', '')}")
+        print(f"Type Match: {is_doc_type_correct}")
         print("-" * 50)
         
-        # 写入CSV
+        # Write to CSV
         write_to_csv(csv_data)
         
     except Exception as e:
         print(f"Error processing {pdf_path}: {str(e)}")
-        # 写入错误记录
+        # Write error record
         csv_data = {
             'file_name': os.path.basename(pdf_path),
             'root_folder': root_folder,
@@ -261,6 +235,36 @@ def process_pdf(pdf_path: str, config: Dict[str, Any], root_folder: str = "") ->
             'isDocTypeCorrect': False
         }
         write_to_csv(csv_data)
+
+def main():
+    # Create pdfs directory if it doesn't exist
+    if not os.path.exists("pdfs"):
+        os.makedirs("pdfs")
+        print("Created 'pdfs' directory. Please place your PDF files in appropriate subdirectories.")
+        return
+
+    # Clear CSV file and write header
+    clear_csv_file()
+    print("Starting PDF processing...")
+
+    # Load configuration
+    config = load_config()
+    
+    # Process all PDF files
+    pdf_files = find_pdf_files()
+    print(f"Found {len(pdf_files)} PDF files to process")
+    
+    # Process each PDF file
+    for pdf_path in pdf_files:
+        try:
+            # Get the root folder name (first subdirectory under pdfs)
+            root_folder = os.path.basename(os.path.dirname(pdf_path))
+            process_pdf(pdf_path, config, root_folder)
+            
+        except Exception as e:
+            print(f"Error processing {pdf_path}: {str(e)}")
+    
+    print("\nProcessing completed. Results have been saved to result.csv")
 
 if __name__ == "__main__":
     main()
