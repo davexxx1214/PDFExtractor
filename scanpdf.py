@@ -145,11 +145,15 @@ def get_llm_analysis(text: str, config: Dict[str, Any]) -> Dict[str, Any]:
     except json.JSONDecodeError as e:
         raise Exception(f"Failed to parse LLM response as JSON: {llm_response}\nError: {str(e)}")
 
-def get_correct_document_type(file_path: str) -> str:
-    """Get the correct document type from the parent directory name"""
-    # Get the parent directory name
-    parent_dir = os.path.basename(os.path.dirname(file_path))
-    return parent_dir
+def get_correct_document_type(pdf_path: str) -> str:
+    """从PDF文件路径获取正确的文档类型（基于目录名）"""
+    # 获取pdfs目录下的第一级子目录名作为文档类型
+    parts = pdf_path.split(os.sep)
+    if 'pdfs' in parts:
+        pdfs_index = parts.index('pdfs')
+        if len(parts) > pdfs_index + 1:
+            return parts[pdfs_index + 1]
+    return ""
 
 def find_pdf_files(base_dir: str = "pdfs") -> list[str]:
     """Recursively find all PDF files in the base directory and its subdirectories"""
@@ -207,6 +211,9 @@ def process_pdf(pdf_path: str, config: Dict[str, Any], root_folder: str = "") ->
     try:
         print(f"Processing {pdf_path}...")
         
+        # 获取正确的文档类型（从目录名）
+        correct_doc_type = get_correct_document_type(pdf_path)
+        
         # 提取文本
         text = extract_text_from_pdf(pdf_path)
         if not text.strip():
@@ -219,6 +226,9 @@ def process_pdf(pdf_path: str, config: Dict[str, Any], root_folder: str = "") ->
             print(f"Warning: No analysis result for {pdf_path}")
             return
             
+        # 检查文档类型是否匹配
+        is_doc_type_correct = result.get('documentType', '').strip() == correct_doc_type.strip()
+        
         # 准备CSV数据
         csv_data = {
             'file_name': os.path.basename(pdf_path),
@@ -226,15 +236,31 @@ def process_pdf(pdf_path: str, config: Dict[str, Any], root_folder: str = "") ->
             'documentType': result.get('documentType', ''),
             'DocDate': result.get('DocDate', ''),
             'InvestmentName': result.get('InvestmentName', ''),
-            'isDocTypeCorrect': result.get('isDocTypeCorrect', '')
+            'isDocTypeCorrect': is_doc_type_correct
         }
+        
+        # 打印处理结果
+        print(f"File: {os.path.basename(pdf_path)}")
+        print(f"Directory type: {correct_doc_type}")
+        print(f"Detected type: {result.get('documentType', '')}")
+        print(f"Type match: {is_doc_type_correct}")
+        print("-" * 50)
         
         # 写入CSV
         write_to_csv(csv_data)
-        print(f"Successfully processed {pdf_path}")
         
     except Exception as e:
         print(f"Error processing {pdf_path}: {str(e)}")
+        # 写入错误记录
+        csv_data = {
+            'file_name': os.path.basename(pdf_path),
+            'root_folder': root_folder,
+            'documentType': 'ERROR',
+            'DocDate': str(e),
+            'InvestmentName': '',
+            'isDocTypeCorrect': False
+        }
+        write_to_csv(csv_data)
 
 if __name__ == "__main__":
     main()
