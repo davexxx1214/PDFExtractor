@@ -96,14 +96,14 @@ The `config.json` file contains all necessary API and processing settings:
 - `max_tokens`: Maximum total tokens allowed for API requests (default: 8192)
 - `reserved_tokens`: Tokens reserved for system overhead (default: 200)
 
-### Token Management
+### Token Estimation
 
-The system implements intelligent token management to handle large documents:
+The system uses a simple character-based method to estimate tokens:
 
-1. **Token Calculation**
-   - Uses `tiktoken` library for precise token counting
-   - Supports different OpenAI models
-   - Automatically adapts to model-specific tokenizers
+1. **Estimation Rules**
+   - English words ≈ 1 token each
+   - Chinese characters ≈ 2 tokens each
+   - Punctuation and spaces ≈ 0.25 tokens each
 
 2. **Token Budget Allocation**
    ```
@@ -113,17 +113,11 @@ The system implements intelligent token management to handle large documents:
    └── Reserved Tokens (reserved_tokens)
    ```
 
-3. **Dynamic Adjustment**
-   - Calculates available tokens for document content
-   - Accounts for system prompt size
-   - Reserves space for completion tokens
-   - Formula: `available_tokens = max_tokens - prompt_tokens - reserved_tokens`
-
-4. **Text Truncation**
-   - Preserves document structure
-   - Maintains paragraph integrity
-   - Prioritizes content from the beginning
-   - Provides detailed token usage statistics
+3. **Dynamic Text Truncation**
+   - Calculates text-to-token ratio
+   - Preserves complete paragraphs
+   - Maintains document structure
+   - Provides token usage estimates
 
 ### Token Usage Example
 
@@ -136,11 +130,11 @@ Total Tokens: 8192
 ```
 
 The system will automatically:
-1. Calculate prompt token usage
-2. Determine available space for document content
-3. Truncate document if necessary
-4. Preserve complete paragraphs
-5. Log token usage statistics
+1. Estimate token usage using character-based rules
+2. Calculate available space for content
+3. Truncate text if necessary
+4. Preserve paragraph integrity
+5. Log estimated token usage
 
 ## Usage
 

@@ -5,7 +5,6 @@ import glob
 from typing import Dict, Any, Tuple
 import requests
 from PyPDF2 import PdfReader
-import tiktoken
 
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json"""
@@ -14,47 +13,74 @@ def load_config() -> Dict[str, Any]:
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text content from a PDF file"""
-    reader = PdfReader(pdf_path)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text() + "\n"
-    return text
-
-def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
-    """使用tiktoken计算文本的token数量"""
     try:
-        encoding = tiktoken.encoding_for_model(model)
-    except KeyError:
-        # 如果找不到特定模型的编码，使用cl100k_base
-        encoding = tiktoken.get_encoding("cl100k_base")
-    
-    return len(encoding.encode(text))
+        reader = PdfReader(pdf_path)
+        text = ""
+        for page in reader.pages:
+            try:
+                text += page.extract_text() + "\n"
+            except Exception as e:
+                print(f"Warning: Error extracting text from page in {pdf_path}: {str(e)}")
+                continue
+        return text
+    except Exception as e:
+        print(f"Error reading PDF {pdf_path}: {str(e)}")
+        return ""
 
-def truncate_text_by_tokens(text: str, max_tokens: int, model: str, reserved_tokens: int = 200) -> str:
-    """将文本截断到指定的token数量以内，使用tiktoken进行精确计数"""
-    try:
-        encoding = tiktoken.encoding_for_model(model)
-    except KeyError:
-        encoding = tiktoken.get_encoding("cl100k_base")
+def estimate_tokens(text: str) -> int:
+    """估算文本的token数量
     
-    # 编码整个文本
-    tokens = encoding.encode(text)
+    使用简单的估算方法：
+    - 英文单词约等于1个token
+    - 中文字符约等于2个token
+    - 标点符号和空格约等于0.25个token
+    """
+    # 移除多余的空白字符
+    text = ' '.join(text.split())
     
-    if len(tokens) <= max_tokens:
+    # 计算中文字符数量
+    chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+    
+    # 计算英文单词数量（简单估算）
+    words = len(text.split())
+    
+    # 计算标点符号和空格数量
+    punctuation = sum(1 for char in text if not char.isalnum())
+    
+    # 估算总token数
+    estimated_tokens = (
+        chinese_chars * 2 +  # 中文字符
+        words +             # 英文单词
+        punctuation * 0.25  # 标点和空格
+    )
+    
+    return int(estimated_tokens)
+
+def truncate_text_by_tokens(text: str, max_tokens: int, reserved_tokens: int = 200) -> str:
+    """将文本截断到指定的token数量以内，使用简单字符估算方法"""
+    if not text:
+        return text
+        
+    estimated_total = estimate_tokens(text)
+    
+    if estimated_total <= max_tokens:
         return text
     
-    # 截取指定数量的token
-    truncated_tokens = tokens[:max_tokens]
-    truncated_text = encoding.decode(truncated_tokens)
+    # 计算截断比例
+    ratio = max_tokens / estimated_total
+    target_length = int(len(text) * ratio)
+    
+    # 截取文本
+    truncated_text = text[:target_length]
     
     # 找到最后一个完整段落
     last_para = truncated_text.rfind('\n\n')
     if last_para > 0:
         truncated_text = truncated_text[:last_para]
     
-    # 计算实际使用的token数
-    final_tokens = count_tokens(truncated_text, model)
-    print(f"文本已截断：原始token数={len(tokens)}, 截断后token数={final_tokens}")
+    # 计算最终token数
+    final_tokens = estimate_tokens(truncated_text)
+    print(f"文本已截断：原始token估算={estimated_total}, 截断后token估算={final_tokens}")
     
     return truncated_text.strip()
 
@@ -68,15 +94,14 @@ def get_llm_analysis(text: str, config: Dict[str, Any]) -> Dict[str, Any]:
     reserved_tokens = config.get('reserved_tokens', 200)  # 默认值为200
     
     # 计算prompt的token数量
-    prompt_tokens = count_tokens(prompt, config['model'])
+    prompt_tokens = estimate_tokens(prompt)
     # 为文本内容预留token空间
     max_text_tokens = max_tokens - prompt_tokens - reserved_tokens
     
-    # 使用tiktoken进行精确的token计数和截断
+    # 使用简单估算方法进行token计数和截断
     text = truncate_text_by_tokens(
         text=text,
         max_tokens=max_text_tokens,
-        model=config['model'],
         reserved_tokens=reserved_tokens
     )
 
@@ -135,6 +160,21 @@ def find_pdf_files(base_dir: str = "pdfs") -> list[str]:
                 pdf_files.append(os.path.join(root, file))
     return pdf_files
 
+def clear_csv_file() -> None:
+    """清空CSV文件并写入表头"""
+    csv_fields = ['file_name', 'root_folder', 'documentType', 'DocDate', 'InvestmentName', 'isDocTypeCorrect']
+    with open('result.csv', 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=csv_fields)
+        writer.writeheader()
+    print("Cleared result.csv and wrote header")
+
+def write_to_csv(data: Dict[str, Any]) -> None:
+    """Write data to CSV file"""
+    csv_fields = ['file_name', 'root_folder', 'documentType', 'DocDate', 'InvestmentName', 'isDocTypeCorrect']
+    with open('result.csv', 'a', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=csv_fields)
+        writer.writerow(data)
+
 def main():
     # Create pdfs directory if it doesn't exist
     if not os.path.exists("pdfs"):
@@ -142,60 +182,59 @@ def main():
         print("Created 'pdfs' directory. Please place your PDF files in appropriate subdirectories.")
         return
 
+    # 清空CSV文件并写入表头
+    clear_csv_file()
+
     # Load configuration
     config = load_config()
     
-    # Prepare CSV file
-    csv_fields = ['file_name', 'root_folder', 'documentType', 'DocDate', 'InvestmentName', 'isDocTypeCorrect']
-    with open('result.csv', 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=csv_fields)
-        writer.writeheader()
+    # Process all PDF files in the pdfs directory and its subdirectories
+    for pdf_path in find_pdf_files():
+        try:
+            # Get the correct document type from directory name
+            correct_doc_type = get_correct_document_type(pdf_path)
+            # Get the root folder name (first subdirectory under pdfs)
+            root_folder = os.path.basename(os.path.dirname(pdf_path))
+            
+            # Process PDF file
+            process_pdf(pdf_path, config, root_folder)
+            
+        except Exception as e:
+            print(f"Error processing {pdf_path}: {str(e)}")
+
+def process_pdf(pdf_path: str, config: Dict[str, Any], root_folder: str = "") -> None:
+    """Process a single PDF file"""
+    try:
+        print(f"Processing {pdf_path}...")
         
-        # Process all PDF files in the pdfs directory and its subdirectories
-        for pdf_path in find_pdf_files():
-            try:
-                # Get the correct document type from directory name
-                correct_doc_type = get_correct_document_type(pdf_path)
-                # Get the root folder name (first subdirectory under pdfs)
-                root_folder = os.path.basename(os.path.dirname(pdf_path))
-                
-                # Extract text from PDF
-                text = extract_text_from_pdf(pdf_path)
-                
-                # Get analysis from LLM
-                analysis = get_llm_analysis(text, config)
-                
-                # Check if LLM's document type matches directory name
-                is_doc_type_correct = analysis['documentType'] == correct_doc_type
-                
-                # Write results to CSV
-                writer.writerow({
-                    'file_name': os.path.basename(pdf_path),
-                    'root_folder': root_folder,
-                    'documentType': analysis['documentType'],
-                    'DocDate': analysis['DocDate'],
-                    'InvestmentName': analysis['InvestmentName'],
-                    'isDocTypeCorrect': is_doc_type_correct
-                })
-                
-                print(f"Processed: {pdf_path}")
-                print(f"Root folder: {root_folder}")
-                print(f"Directory type: {correct_doc_type}")
-                print(f"LLM type: {analysis['documentType']}")
-                print(f"Match: {is_doc_type_correct}")
-                print("-" * 50)
-                
-            except Exception as e:
-                print(f"Error processing {pdf_path}: {str(e)}")
-                # Write error entry to CSV
-                writer.writerow({
-                    'file_name': os.path.basename(pdf_path),
-                    'root_folder': os.path.basename(os.path.dirname(pdf_path)),
-                    'documentType': 'ERROR',
-                    'DocDate': str(e),
-                    'InvestmentName': '',
-                    'isDocTypeCorrect': False
-                })
+        # 提取文本
+        text = extract_text_from_pdf(pdf_path)
+        if not text.strip():
+            print(f"Warning: No text extracted from {pdf_path}")
+            return
+            
+        # 获取分析结果
+        result = get_llm_analysis(text, config)
+        if not result:
+            print(f"Warning: No analysis result for {pdf_path}")
+            return
+            
+        # 准备CSV数据
+        csv_data = {
+            'file_name': os.path.basename(pdf_path),
+            'root_folder': root_folder,
+            'documentType': result.get('documentType', ''),
+            'DocDate': result.get('DocDate', ''),
+            'InvestmentName': result.get('InvestmentName', ''),
+            'isDocTypeCorrect': result.get('isDocTypeCorrect', '')
+        }
+        
+        # 写入CSV
+        write_to_csv(csv_data)
+        print(f"Successfully processed {pdf_path}")
+        
+    except Exception as e:
+        print(f"Error processing {pdf_path}: {str(e)}")
 
 if __name__ == "__main__":
     main()
