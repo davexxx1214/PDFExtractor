@@ -60,14 +60,31 @@ def fix_json_format(json_str: str) -> str:
     # 移除所有控制字符（除了换行和制表符）
     json_str = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', json_str)
     
+    # 处理公司名称中的特殊字符
+    def fix_company_name(match):
+        key = match.group(1)
+        value = match.group(2)
+        
+        # 如果是InvestmentName字段，需要特殊处理
+        if key == "InvestmentName":
+            # 转义引号和其他特殊字符
+            value = value.replace('"', '\\"')
+            # 处理公司名称中的常见后缀
+            suffixes = [", L.P.", ", LP", ", Inc.", ", LLC", ", Ltd.", ", Limited", ", Corp.", ", Corporation"]
+            for suffix in suffixes:
+                if suffix in value:
+                    # 确保后缀前的引号被正确处理
+                    parts = value.split(suffix)
+                    value = parts[0] + suffix.replace(", ", "\\, ")
+        
+        return f'"{key}": "{value}"'
+    
     # 修复日期格式问题
-    # 匹配形如 "July 28", 2024" 的模式，将其转换为 "July 28, 2024"
     json_str = re.sub(r'"([^"]+?)",\s*(\d{4})"', r'\1, \2', json_str)
     
-    # 修复未闭合的引号问题
-    # 找到形如 "key": " 的模式（值开始但未结束的情况）
-    pattern = r'"([^"]+)"\s*:\s*"([^"]*?)(?=,|\n|})'
-    json_str = re.sub(pattern, lambda m: f'"{m.group(1)}": "{m.group(2)}"', json_str)
+    # 修复字段值中的特殊字符
+    pattern = r'"([^"]+)"\s*:\s*"([^"}]*?)(?:"|,|\})'
+    json_str = re.sub(pattern, fix_company_name, json_str)
     
     # 确保所有键值对正确结束
     json_str = re.sub(r'",\s*([}\]])', '"\1', json_str)
@@ -75,19 +92,16 @@ def fix_json_format(json_str: str) -> str:
     # 修复可能的多余逗号
     json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
     
-    # 修复日期值中的引号问题
-    def fix_date_format(match):
-        key = match.group(1)
-        value = match.group(2)
-        # 如果值包含年份，需要特殊处理
-        if re.search(r'\d{4}', value):
-            # 移除多余的引号和逗号
-            value = re.sub(r'"\s*,\s*(\d{4})"', r', \1', value)
-        return f'"{key}": "{value}"'
+    # 修复可能的转义问题
+    json_str = json_str.replace('\\"', '"').replace('\\,', ',')
     
-    json_str = re.sub(r'"([^"]+)"\s*:\s*"([^"}]*)"', fix_date_format, json_str)
-    
-    return json_str
+    try:
+        # 尝试解析JSON，如果成功则返回格式化后的字符串
+        parsed = json.loads(json_str)
+        return json.dumps(parsed)
+    except json.JSONDecodeError:
+        # 如果解析失败，返回原始修复的字符串
+        return json_str
 
 def convert_date_format(date_str: str) -> str:
     """将各种日期格式转换为MM/DD/YYYY格式"""
@@ -208,11 +222,29 @@ def process_single_chunk(text: str, prompt: str, config: Dict[str, Any]) -> Dict
     llm_response = fix_json_format(llm_response)
     
     try:
+        # 尝试解析JSON
         result = json.loads(llm_response)
+        
+        # 清理投资名称中的特殊字符
+        if 'InvestmentName' in result:
+            # 移除多余的空格
+            result['InvestmentName'] = result['InvestmentName'].strip()
+            # 标准化公司后缀
+            suffixes = [", L.P.", ", LP", ", Inc.", ", LLC", ", Ltd.", ", Limited", ", Corp.", ", Corporation"]
+            for suffix in suffixes:
+                if suffix.upper() in result['InvestmentName'].upper():
+                    # 获取基本名称和后缀
+                    base_name = result['InvestmentName'].upper().split(suffix.upper())[0]
+                    # 重建标准化的名称
+                    result['InvestmentName'] = base_name + suffix
+                    break
+        
         # 转换日期格式
         if 'DocDate' in result:
             result['DocDate'] = convert_date_format(result['DocDate'])
+        
         return result
+        
     except json.JSONDecodeError as e:
         print(f"JSON解析错误。响应内容：\n{llm_response}")
         print(f"错误信息：{str(e)}")
@@ -222,13 +254,24 @@ def process_single_chunk(text: str, prompt: str, config: Dict[str, Any]) -> Dict
             # 使用正则表达式提取可能的值
             doc_type_match = re.search(r'"documentType"\s*:\s*"([^"]*)"', llm_response)
             doc_date_match = re.search(r'"DocDate"\s*:\s*"([^"}]*?)(?:"\s*,\s*\d{4})?(?:"|,|\})', llm_response)
-            inv_name_match = re.search(r'"InvestmentName"\s*:\s*"([^"]*)"', llm_response)
+            inv_name_match = re.search(r'"InvestmentName"\s*:\s*"([^"}]*?)(?:"|,|\})', llm_response)
+            
+            # 清理并标准化投资名称
+            investment_name = ""
+            if inv_name_match:
+                investment_name = inv_name_match.group(1).strip()
+                # 标准化公司后缀
+                suffixes = [", L.P.", ", LP", ", Inc.", ", LLC", ", Ltd.", ", Limited", ", Corp.", ", Corporation"]
+                for suffix in suffixes:
+                    if suffix.upper() in investment_name.upper():
+                        base_name = investment_name.upper().split(suffix.upper())[0]
+                        investment_name = base_name + suffix
+                        break
             
             # 清理并转换日期格式
             doc_date = ""
             if doc_date_match:
                 doc_date = doc_date_match.group(1)
-                # 如果日期中包含年份，需要特殊处理
                 year_match = re.search(r'(\d{4})', llm_response)
                 if year_match and year_match.group(1) not in doc_date:
                     doc_date = f"{doc_date}, {year_match.group(1)}"
@@ -237,7 +280,7 @@ def process_single_chunk(text: str, prompt: str, config: Dict[str, Any]) -> Dict
             return {
                 "documentType": doc_type_match.group(1) if doc_type_match else "",
                 "DocDate": doc_date,
-                "InvestmentName": inv_name_match.group(1) if inv_name_match else "",
+                "InvestmentName": investment_name,
                 "isDocTypeCorrect": False
             }
         except Exception as ex:
