@@ -157,6 +157,86 @@ payment_notice.pdf,Cash Notice,Cash Notice,2024-01-15,XYZ Investment,true
 invalid.pdf,K-1 and Tax Information,ERROR,Failed to extract text,,false
 ```
 
+## Advanced Features
+
+### Text Chunking Algorithm
+
+The system implements a sophisticated text chunking algorithm to handle large PDF documents that exceed OpenAI's token limits:
+
+1. **Chunk Size Control**
+   - Default maximum chunk size: 1000 tokens
+   - Estimated using character count (4 characters ≈ 1 token)
+   - Configurable through the `max_tokens` parameter
+
+2. **Intelligent Splitting**
+   - Splits text at paragraph boundaries to maintain context
+   - Preserves document structure and readability
+   - Handles both short and long paragraphs efficiently
+
+3. **Process Flow**
+   ```
+   PDF Text → Paragraphs → Chunks → API Processing → Merged Results
+   ```
+
+4. **Chunk Processing**
+   - Each chunk is processed independently
+   - Custom prompt indicating chunk position (e.g., "Part 1/3")
+   - Parallel processing capability for efficiency
+
+### JSON Merging Strategy
+
+The system uses an intelligent strategy to merge results from multiple chunks:
+
+1. **Document Type (documentType)**
+   - Uses majority voting system
+   - Selects the most frequently occurring document type
+   - Helps filter out occasional misclassifications
+
+2. **Document Date (DocDate)**
+   - Collects all valid dates (MM/DD/YYYY format)
+   - Selects the most recent date
+   - Handles various date formats and normalizes them
+   - Ignores invalid or malformed dates
+
+3. **Investment Name (InvestmentName)**
+   - Selects the most complete version of the name
+   - Primary criteria: longest name version
+   - Secondary criteria: frequency of occurrence
+   - Handles variations in company name formats
+
+4. **Merge Statistics**
+   - Tracks total number of chunks processed
+   - Monitors document type agreement ratio
+   - Counts valid date candidates
+   - Records unique name variations
+   - Used for quality assurance and debugging
+
+5. **Error Handling**
+   - Graceful handling of parsing failures
+   - Fallback mechanisms for incomplete data
+   - Maintains data consistency across chunks
+
+Example of merged results:
+```json
+{
+  "documentType": "Financial Statement",  // Most common across chunks
+  "DocDate": "07/28/2024",              // Most recent valid date
+  "InvestmentName": "NVIDIA Corporation" // Most complete name version
+}
+```
+
+### Quality Assurance
+
+1. **Validation Checks**
+   - Document type consistency across chunks
+   - Date format standardization
+   - Investment name normalization
+
+2. **Error Recovery**
+   - Handles malformed JSON responses
+   - Recovers partial information when possible
+   - Maintains data integrity
+
 ## Error Handling
 
 - Failed PDF processing is logged in `result.csv` with:
