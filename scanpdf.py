@@ -5,6 +5,7 @@ import glob
 from typing import Dict, Any, Tuple
 import requests
 from PyPDF2 import PdfReader
+import tiktoken
 
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json"""
@@ -19,10 +20,65 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         text += page.extract_text() + "\n"
     return text
 
+def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
+    """使用tiktoken计算文本的token数量"""
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        # 如果找不到特定模型的编码，使用cl100k_base
+        encoding = tiktoken.get_encoding("cl100k_base")
+    
+    return len(encoding.encode(text))
+
+def truncate_text_by_tokens(text: str, max_tokens: int, model: str, reserved_tokens: int = 200) -> str:
+    """将文本截断到指定的token数量以内，使用tiktoken进行精确计数"""
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    
+    # 编码整个文本
+    tokens = encoding.encode(text)
+    
+    if len(tokens) <= max_tokens:
+        return text
+    
+    # 截取指定数量的token
+    truncated_tokens = tokens[:max_tokens]
+    truncated_text = encoding.decode(truncated_tokens)
+    
+    # 找到最后一个完整段落
+    last_para = truncated_text.rfind('\n\n')
+    if last_para > 0:
+        truncated_text = truncated_text[:last_para]
+    
+    # 计算实际使用的token数
+    final_tokens = count_tokens(truncated_text, model)
+    print(f"文本已截断：原始token数={len(tokens)}, 截断后token数={final_tokens}")
+    
+    return truncated_text.strip()
+
 def get_llm_analysis(text: str, config: Dict[str, Any]) -> Dict[str, Any]:
     """Get analysis from LLM API"""
     with open('prompt.txt', 'r') as f:
         prompt = f.read()
+    
+    # 从配置中获取token限制
+    max_tokens = config.get('max_tokens', 8192)  # 默认值为8192
+    reserved_tokens = config.get('reserved_tokens', 200)  # 默认值为200
+    
+    # 计算prompt的token数量
+    prompt_tokens = count_tokens(prompt, config['model'])
+    # 为文本内容预留token空间
+    max_text_tokens = max_tokens - prompt_tokens - reserved_tokens
+    
+    # 使用tiktoken进行精确的token计数和截断
+    text = truncate_text_by_tokens(
+        text=text,
+        max_tokens=max_text_tokens,
+        model=config['model'],
+        reserved_tokens=reserved_tokens
+    )
 
     headers = {
         "Authorization": f"Bearer {config['api_key']}",

@@ -1,5 +1,7 @@
 {
-    "api_base": "https://api.openai.com/v1",
+    "api_base": "your-api-base-url",
     "api_key": "your-api-key-here",
-    "model": "gpt-4o-mini"
+    "model": "gpt-3.5-turbo",
+    "max_tokens": 8192,
+    "reserved_tokens": 200
 }

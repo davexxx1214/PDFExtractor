@@ -50,7 +50,9 @@ cp config.json.example config.json    # Linux/Mac
 {
     "api_base": "your-api-base-url",
     "api_key": "your-api-key-here",
-    "model": "your-model-name"
+    "model": "your-model-name",
+    "max_tokens": 8192,
+    "reserved_tokens": 200
 }
 ```
 
@@ -72,6 +74,73 @@ PDFExtractor/
 ├── scanpdf.py              # PDF scanning and analysis script
 └── README.md
 ```
+
+## Configuration
+
+### API Settings
+
+The `config.json` file contains all necessary API and processing settings:
+
+```json
+{
+    "api_base": "your-api-base-url",
+    "api_key": "your-api-key-here",
+    "model": "gpt-3.5-turbo",
+    "max_tokens": 8192,
+    "reserved_tokens": 200
+}
+```
+- `api_base`: OpenAI API endpoint URL
+- `api_key`: Your OpenAI API key
+- `model`: The GPT model to use (e.g., "gpt-3.5-turbo", "gpt-4")
+- `max_tokens`: Maximum total tokens allowed for API requests (default: 8192)
+- `reserved_tokens`: Tokens reserved for system overhead (default: 200)
+
+### Token Management
+
+The system implements intelligent token management to handle large documents:
+
+1. **Token Calculation**
+   - Uses `tiktoken` library for precise token counting
+   - Supports different OpenAI models
+   - Automatically adapts to model-specific tokenizers
+
+2. **Token Budget Allocation**
+   ```
+   Total Tokens (max_tokens)
+   ├── System Prompt Tokens
+   ├── Document Content Tokens
+   └── Reserved Tokens (reserved_tokens)
+   ```
+
+3. **Dynamic Adjustment**
+   - Calculates available tokens for document content
+   - Accounts for system prompt size
+   - Reserves space for completion tokens
+   - Formula: `available_tokens = max_tokens - prompt_tokens - reserved_tokens`
+
+4. **Text Truncation**
+   - Preserves document structure
+   - Maintains paragraph integrity
+   - Prioritizes content from the beginning
+   - Provides detailed token usage statistics
+
+### Token Usage Example
+
+For a configuration with `max_tokens: 8192` and `reserved_tokens: 200`:
+```
+Total Tokens: 8192
+├── System Prompt: ~800 tokens
+├── Available for Content: ~7192 tokens
+└── Reserved: 200 tokens
+```
+
+The system will automatically:
+1. Calculate prompt token usage
+2. Determine available space for document content
+3. Truncate document if necessary
+4. Preserve complete paragraphs
+5. Log token usage statistics
 
 ## Usage
 
